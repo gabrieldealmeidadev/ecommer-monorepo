@@ -22,6 +22,18 @@ export async function listProducts(req: Request, res: Response) {
   }
 }
 
+export async function listAdminProducts(_req: Request, res: Response) {
+  try {
+    const products = await prisma.product.findMany({
+      include: { category: true },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.status(200).json({ products });
+  } catch {
+    return res.status(500).json({ message: 'Não foi possível listar os produtos.' });
+  }
+}
+
 export async function getProduct(req: Request, res: Response) {
   try {
     const product = await prisma.product.findFirst({ where: { OR: [{ id: req.params.id }, { slug: req.params.id }], status: ProductStatus.ACTIVE }, include: { category: true } });

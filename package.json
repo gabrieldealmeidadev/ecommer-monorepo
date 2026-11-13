@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "concurrently -k -n API,WEB -c blue,green \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
     "build": "npm run build -w apps/api && npm run build -w apps/web",
-    "db:generate": "npm run db:generate -w apps/api",
-    "db:migrate": "npm run db:migrate -w apps/api",
-    "db:deploy": "npm run db:deploy -w apps/api",
+    "db:generate": "prisma generate --schema apps/api/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema apps/api/prisma/schema.prisma --name init",
+    "db:deploy": "prisma migrate deploy --schema apps/api/prisma/schema.prisma",
     "seed:admin": "npm run seed:admin -w apps/api",
     "test": "npm run test -w apps/api"
   },

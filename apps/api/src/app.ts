@@ -10,6 +10,7 @@ import cartRoutes from './routes/cart.routes';
 import addressRoutes from './routes/address.routes';
 import shippingRoutes from './routes/shipping.routes';
 import orderRoutes from './routes/order.routes';
+import adminUserRoutes from './routes/admin-user.routes';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -26,6 +27,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/admin/users', adminUserRoutes);
 
 // Resposta explícita para rotas inexistentes; não é middleware global de erro.
 app.use((_req, res) => {
