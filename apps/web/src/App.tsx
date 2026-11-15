@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, Route, Routes, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import heroImage from "../src/assets/banner.png";
 import { api, formatMoney } from "./lib/api";
 
@@ -48,6 +48,25 @@ type ShippingQuote = {
   priceCents: number;
   etaDays: number;
 };
+type CheckoutSelection = { postalCode: string; quote: ShippingQuote };
+type CheckoutDetails = {
+  name: string;
+  email: string;
+  postalCode: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+};
+type BrasilAddress = {
+  cep: string;
+  state: string;
+  city: string;
+  neighborhood: string | null;
+  street: string | null;
+};
 type Order = {
   id: string;
   status: OrderStatus;
@@ -57,6 +76,47 @@ type Order = {
   payment: { status: string } | null;
 };
 type Theme = "light" | "dark";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isShippingQuote(value: unknown): value is ShippingQuote {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.provider === "string" &&
+    typeof value.service === "string" &&
+    Number.isInteger(value.priceCents) &&
+    Number(value.priceCents) >= 0 &&
+    Number.isInteger(value.etaDays) &&
+    Number(value.etaDays) >= 0
+  );
+}
+
+function isCheckoutSelection(value: unknown): value is CheckoutSelection {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.postalCode === "string" &&
+    /^\d{5}-?\d{3}$/.test(value.postalCode) &&
+    isShippingQuote(value.quote)
+  );
+}
+
+function isBrasilAddress(value: unknown): value is BrasilAddress {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.cep === "string" &&
+    typeof value.state === "string" &&
+    typeof value.city === "string" &&
+    (typeof value.neighborhood === "string" || value.neighborhood === null) &&
+    (typeof value.street === "string" || value.street === null)
+  );
+}
+
+function formatPostalCode(postalCode: string) {
+  const digits = postalCode.replace(/\D/g, "");
+  return digits.length === 8 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : postalCode;
+}
 
 function getInitialTheme(): Theme {
   const storedTheme = window.localStorage.getItem("ecommerce-theme");
@@ -437,14 +497,18 @@ function Login({
 function CartPage({
   onError,
   onCartChange,
+  user,
 }: {
   onError: (message: string) => void;
   onCartChange: (cart: Cart) => void;
+  user: User | null;
 }) {
+  const navigate = useNavigate();
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
   const [postalCode, setPostalCode] = useState("");
   const [shippingQuotes, setShippingQuotes] = useState<ShippingQuote[] | null>(null);
+  const [selectedQuoteIndex, setSelectedQuoteIndex] = useState<number | null>(null);
   const [shippingDemo, setShippingDemo] = useState(false);
   const [quotingShipping, setQuotingShipping] = useState(false);
   async function load() {
@@ -479,6 +543,7 @@ function CartPage({
     if (!cart) return;
     setQuotingShipping(true);
     setShippingQuotes(null);
+    setSelectedQuoteIndex(null);
     setShippingDemo(false);
     try {
       const data = await api<{ quotes: ShippingQuote[]; demo: boolean }>("/api/shipping/quote", {
@@ -555,7 +620,11 @@ function CartPage({
               inputMode="numeric"
               autoComplete="postal-code"
               value={postalCode}
-              onChange={(event) => setPostalCode(event.target.value)}
+              onChange={(event) => {
+                setPostalCode(event.target.value);
+                setShippingQuotes(null);
+                setSelectedQuoteIndex(null);
+              }}
               placeholder="00000-000"
               required
               pattern="\d{5}-?\d{3}"
@@ -575,21 +644,313 @@ function CartPage({
         {shippingQuotes && shippingQuotes.length > 0 && (
           <div className="cart-list">
             {shippingQuotes.map((quote, index) => (
-              <article className="cart-item" key={`${quote.provider}-${quote.service}-${index}`}>
+              <label
+                className={`shipping-option${selectedQuoteIndex === index ? " selected" : ""}`}
+                key={`${quote.provider}-${quote.service}-${index}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedQuoteIndex === index}
+                  onChange={() =>
+                    setSelectedQuoteIndex((selected) => selected === index ? null : index)
+                  }
+                  aria-label={`Selecionar ${quote.provider} — ${quote.service}`}
+                />
                 <div>
                   <strong>{quote.provider} — {quote.service}</strong>
                   <p className="muted">Prazo: {quote.etaDays} dias úteis</p>
                 </div>
                 <strong>{formatMoney(quote.priceCents)}</strong>
-              </article>
+              </label>
             ))}
           </div>
         )}
       </section>
-      <p className="muted">
-        Para finalizar a compra, cadastre um endereço e crie o pedido pela API.
-        O checkout visual completo será uma próxima etapa.
-      </p>
+      {shippingQuotes && shippingQuotes.length > 0 && (
+        user ? (
+          <button
+            className="button"
+            type="button"
+            disabled={selectedQuoteIndex === null}
+            onClick={() => {
+              const quote = shippingQuotes[selectedQuoteIndex ?? -1];
+              if (!quote) return;
+              navigate("/checkout", {
+                state: { postalCode, quote } satisfies CheckoutSelection,
+              });
+            }}
+          >
+            Seguir com a compra
+          </button>
+        ) : (
+          <Link className="button" to="/login">Entre para seguir com a compra</Link>
+        )
+      )}
+    </section>
+  );
+}
+
+function CheckoutPage({ user }: { user: User }) {
+  const location = useLocation();
+  const selection = isCheckoutSelection(location.state) ? location.state : null;
+  const [cart, setCart] = useState<Cart | null>(null);
+  const [address, setAddress] = useState<BrasilAddress | null>(null);
+  const [details, setDetails] = useState<CheckoutDetails>({
+    name: user.name,
+    email: user.email,
+    postalCode: selection ? formatPostalCode(selection.postalCode) : "",
+    street: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+  });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [postalCodeChanged, setPostalCodeChanged] = useState(false);
+
+  function updateDetail(field: keyof CheckoutDetails, value: string) {
+    setDetails((current) => ({ ...current, [field]: value }));
+  }
+
+  useEffect(() => {
+    if (!selection) return;
+    const currentSelection = selection;
+    let active = true;
+    const controller = new AbortController();
+
+    async function loadCheckoutData() {
+      try {
+        const [cartData, addressResponse] = await Promise.all([
+          api<{ cart: Cart }>("/api/cart"),
+          fetch(
+            `https://brasilapi.com.br/api/cep/v2/${currentSelection.postalCode.replace(/\D/g, "")}`,
+            { signal: controller.signal },
+          ),
+        ]);
+        if (!addressResponse.ok) {
+          throw new Error(
+            addressResponse.status === 404
+              ? "CEP não encontrado na BrasilAPI."
+              : "Não foi possível consultar o endereço na BrasilAPI.",
+          );
+        }
+        const addressData: unknown = await addressResponse.json();
+        if (!isBrasilAddress(addressData)) {
+          throw new Error("A BrasilAPI retornou um endereço inválido.");
+        }
+        if (active) {
+          setCart(cartData.cart);
+          setAddress(addressData);
+          setDetails((current) => ({
+            ...current,
+            street: addressData.street ?? "",
+            neighborhood: addressData.neighborhood ?? "",
+            city: addressData.city,
+            state: addressData.state,
+          }));
+        }
+      } catch (error) {
+        if (active) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível carregar os dados do checkout.",
+          );
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadCheckoutData();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [selection?.postalCode]);
+
+  if (!selection) {
+    return (
+      <section className="form-panel">
+        <h1>Selecione o frete</h1>
+        <p>Volte ao carrinho, informe seu CEP e escolha uma opção de entrega.</p>
+        <Link to="/carrinho" className="button">Voltar ao carrinho</Link>
+      </section>
+    );
+  }
+  if (loading) return <p>Carregando dados do checkout...</p>;
+  if (loadError || !cart || !address) {
+    return (
+      <section className="form-panel">
+        <h1>Não foi possível carregar o checkout</h1>
+        <p role="alert">{loadError || "Não foi possível carregar o carrinho."}</p>
+        <Link to="/carrinho" className="button">Voltar ao carrinho</Link>
+      </section>
+    );
+  }
+  if (cart.items.length === 0) {
+    return (
+      <section className="form-panel">
+        <h1>Seu carrinho está vazio</h1>
+        <Link to="/carrinho" className="button">Voltar ao carrinho</Link>
+      </section>
+    );
+  }
+
+  return (
+    <section className="checkout-page">
+      <h1>Confirme seus dados</h1>
+      <p className="muted">Confira as informações da compra antes da próxima etapa.</p>
+      <div className="checkout-grid">
+        <section className="checkout-panel">
+          <h2>Comprador</h2>
+          <div className="checkout-fields">
+            <label>
+              Nome do comprador
+              <input
+                autoComplete="name"
+                value={details.name}
+                onChange={(event) => updateDetail("name", event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              E-mail
+              <input
+                type="email"
+                autoComplete="email"
+                value={details.email}
+                onChange={(event) => updateDetail("email", event.target.value)}
+                required
+              />
+            </label>
+          </div>
+        </section>
+        <section className="checkout-panel">
+          <h2>Endereço de entrega</h2>
+          <div className="checkout-fields two-columns">
+            <label>
+              CEP
+              <input
+                inputMode="numeric"
+                autoComplete="postal-code"
+                value={details.postalCode}
+                onChange={(event) => {
+                  updateDetail("postalCode", event.target.value);
+                  setPostalCodeChanged(
+                    event.target.value.replace(/\D/g, "") !==
+                      selection.postalCode.replace(/\D/g, ""),
+                  );
+                }}
+                placeholder="00000-000"
+                maxLength={9}
+                pattern="\d{5}-?\d{3}"
+                title="Informe um CEP válido."
+                required
+              />
+            </label>
+            <label>
+              Número
+              <input
+                autoComplete="address-line2"
+                value={details.number}
+                onChange={(event) => updateDetail("number", event.target.value)}
+                required
+              />
+            </label>
+            <label className="full-width">
+              Logradouro
+              <input
+                autoComplete="address-line1"
+                value={details.street}
+                onChange={(event) => updateDetail("street", event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Complemento
+              <input
+                value={details.complement}
+                onChange={(event) => updateDetail("complement", event.target.value)}
+                autoComplete="address-line2"
+              />
+            </label>
+            <label>
+              Bairro
+              <input
+                autoComplete="address-level3"
+                value={details.neighborhood}
+                onChange={(event) => updateDetail("neighborhood", event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Cidade
+              <input
+                autoComplete="address-level2"
+                value={details.city}
+                onChange={(event) => updateDetail("city", event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Estado
+              <input
+                autoComplete="address-level1"
+                value={details.state}
+                onChange={(event) => updateDetail("state", event.target.value)}
+                maxLength={2}
+                required
+              />
+            </label>
+          </div>
+          {postalCodeChanged && (
+            <p className="checkout-warning" role="status">
+              O frete foi cotado para o CEP {formatPostalCode(selection.postalCode)}.
+              Volte ao carrinho para recalcular o frete para o CEP editado.
+            </p>
+          )}
+          <p className="muted">
+            Logradouro, bairro, cidade e estado foram preenchidos pela BrasilAPI. As edições nesta tela ainda não são salvas.
+          </p>
+        </section>
+      </div>
+      <section className="checkout-panel checkout-order">
+        <h2>Resumo do pedido</h2>
+        <div className="cart-list">
+          {cart.items.map((item) => (
+            <div className="checkout-line" key={item.id}>
+              <span>{item.name} · {item.quantity} × {formatMoney(item.priceCents)}</span>
+              <strong>{formatMoney(item.lineTotalCents)}</strong>
+            </div>
+          ))}
+        </div>
+        <div className="checkout-line">
+          <span>Subtotal</span>
+          <strong>{formatMoney(cart.subtotalCents)}</strong>
+        </div>
+        <div className="checkout-line">
+          <span>{selection.quote.provider} — {selection.quote.service}</span>
+          <strong>{formatMoney(selection.quote.priceCents)}</strong>
+        </div>
+        <p className="muted">Prazo estimado: {selection.quote.etaDays} dias úteis</p>
+        <div className="total">
+          <span>Total</span>
+          <strong>{formatMoney(cart.subtotalCents + selection.quote.priceCents)}</strong>
+        </div>
+      </section>
+      <section className="checkout-panel checkout-payment">
+        <h2>Pagamento</h2>
+        <p className="muted">
+          A escolha do meio de pagamento será adicionada em uma próxima etapa. Nenhum pedido ou cobrança é criado nesta tela.
+        </p>
+        <button className="button" type="button" disabled>
+          Pagamento em breve
+        </button>
+      </section>
+      <Link to="/carrinho" className="link-button">Voltar ao carrinho</Link>
     </section>
   );
 }
@@ -1335,11 +1696,37 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [cartCount, setCartCount] = useState(0);
   const [notice, setNotice] = useState("");
+  const noticeTimeout = useRef<number | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState("");
   const [search, setSearch] = useState("");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const showError = useCallback((message: string) => {
+    if (noticeTimeout.current !== null) {
+      window.clearTimeout(noticeTimeout.current);
+    }
+    setNotice(message);
+    noticeTimeout.current = window.setTimeout(() => {
+      setNotice("");
+      noticeTimeout.current = null;
+    }, 3000);
+  }, []);
+  const dismissNotice = useCallback(() => {
+    if (noticeTimeout.current !== null) {
+      window.clearTimeout(noticeTimeout.current);
+      noticeTimeout.current = null;
+    }
+    setNotice("");
+  }, []);
+  useEffect(
+    () => () => {
+      if (noticeTimeout.current !== null) {
+        window.clearTimeout(noticeTimeout.current);
+      }
+    },
+    [],
+  );
   useEffect(() => {
     api<{ user: User }>("/api/auth/me")
       .then((data) => setUser(data.user))
@@ -1363,7 +1750,7 @@ export default function App() {
       })
       .catch((e) => {
         if (active)
-          setNotice(
+          showError(
             e instanceof Error
               ? e.message
               : "Não foi possível carregar o carrinho.",
@@ -1372,18 +1759,18 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, showError]);
   useEffect(() => {
     api<{ categories: Category[] }>("/api/categories")
       .then((data) => setCategories(data.categories))
       .catch((e) =>
-        setNotice(
+        showError(
           e instanceof Error
             ? e.message
             : "Não foi possível carregar as categorias.",
         ),
       );
-  }, []);
+  }, [showError]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("ecommerce-theme", theme);
@@ -1412,7 +1799,7 @@ export default function App() {
       {notice && (
         <div className="notice" role="alert">
           {notice}
-          <button onClick={() => setNotice("")}>×</button>
+          <button onClick={dismissNotice}>×</button>
         </div>
       )}
       <main className="container">
@@ -1421,7 +1808,7 @@ export default function App() {
             path="/"
             element={
               <Catalog
-                onError={setNotice}
+                onError={showError}
                 onCartItemAdded={() => setCartCount((count) => count + 1)}
                 categoryId={categoryId}
                 search={search}
@@ -1430,13 +1817,14 @@ export default function App() {
           />
           <Route
             path="/login"
-            element={<Login onLogin={setUser} onError={setNotice} />}
+            element={<Login onLogin={setUser} onError={showError} />}
           />
           <Route
             path="/carrinho"
             element={
               <CartPage
-                onError={setNotice}
+                onError={showError}
+                user={user}
                 onCartChange={(cart) =>
                   setCartCount(
                     cart.items.reduce(
@@ -1449,12 +1837,27 @@ export default function App() {
             }
           />
           <Route
+            path="/checkout"
+            element={
+              authLoading ? (
+                <p>Verificando acesso...</p>
+              ) : user ? (
+                <CheckoutPage user={user} />
+              ) : (
+                <section className="form-panel">
+                  <h1>Entre para continuar</h1>
+                  <Link to="/login" className="button">Fazer login</Link>
+                </section>
+              )
+            }
+          />
+          <Route
             path="/admin"
             element={
               authLoading ? (
                 <p>Verificando acesso...</p>
               ) : user?.role === "ADMIN" ? (
-                <AdminPage onError={setNotice} currentUserId={user.id} />
+                <AdminPage onError={showError} currentUserId={user.id} />
               ) : (
                 <section className="form-panel">
                   <h1>Acesso restrito</h1>

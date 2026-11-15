@@ -10,3 +10,6 @@ O cadastro de produtos recebe peso inteiro em gramas e comprimento, largura e al
 
 ## Geocodificação
 Não está integrada por padrão. Se necessário, escolha um provedor, revise custos e restrições de uso antes de implementar.
+
+## Consulta de endereço por CEP
+O checkout consulta `https://brasilapi.com.br/api/cep/v2/{cep}` diretamente no navegador para preencher logradouro, bairro, cidade e estado do CEP cotado. Os campos do comprador e do endereço podem ser editados, mas as alterações ainda não são salvas; a consulta não retorna número ou complemento. A confirmação atual é somente visual; criação do pedido e integração de pagamento continuam em etapas separadas.

@@ -13,6 +13,7 @@
 - [x] Navegação por categorias e pesquisa de produtos pelo nome
 - [x] Carrinho e endereços
 - [x] Criação de pedido a partir do carrinho
+- [x] Seleção de frete e confirmação dos dados de entrega no checkout
 - [x] Adaptadores demonstrativos de frete e pagamento
 - [x] Integração Frenet configurável para cotação real e medidas de envio no catálogo
 - [x] Painel administrativo com CRUD de produtos, categorias e usuários e atualização de pedidos
