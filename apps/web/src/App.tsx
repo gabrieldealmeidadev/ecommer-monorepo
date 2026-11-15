@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Route, Routes, useNavigate } from "react-router-dom";
+import heroImage from "../src/assets/banner.png";
 import { api, formatMoney } from "./lib/api";
 
 type ProductStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
@@ -269,18 +270,38 @@ function Catalog({
       );
     }
   }
+  const isHome = !categoryId && !search.trim();
   return (
     <>
-      <section className="hero">
-        <p className="eyebrow">LOJA ONLINE</p>
-        <h1>Produtos selecionados para você.</h1>
-        <p>Catálogo inicial do seu e-commerce.</p>
-      </section>
+      {isHome && (
+        <section className="hero" aria-labelledby="home-hero-title">
+          <div className="hero-copy">
+            <p className="eyebrow">LOJA ONLINE</p>
+            <h1 id="home-hero-title">Seu próximo favorito está aqui.</h1>
+            <p className="hero-description">
+              Descubra novidades e produtos escolhidos para fazer parte do seu
+              dia.
+            </p>
+            <a className="button hero-cta" href="#catalogo">
+              Explorar produtos
+              <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          <div className="hero-visual">
+            <div className="hero-glow" />
+            <img
+              className="hero-product-image"
+              src={heroImage}
+              alt="Coleção de ninjas de Konoha em miniaturas colecionáveis"
+            />
+          </div>
+        </section>
+      )}
       {loading ? (
         <p>Carregando produtos...</p>
       ) : (
         <>
-          <h2 className="catalog-heading">
+          <h2 className="catalog-heading" id="catalogo">
             {search.trim()
               ? `Resultados para "${search.trim()}"`
               : categoryId
@@ -1274,7 +1295,10 @@ export default function App() {
                 onError={setNotice}
                 onCartChange={(cart) =>
                   setCartCount(
-                    cart.items.reduce((total, item) => total + item.quantity, 0),
+                    cart.items.reduce(
+                      (total, item) => total + item.quantity,
+                      0,
+                    ),
                   )
                 }
               />
