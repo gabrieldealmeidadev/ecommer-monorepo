@@ -4,6 +4,10 @@ import { prisma } from '../config/prisma';
 import { slugify } from '../utils/slug';
 import { isNonEmptyString, parsePage } from '../utils/validation';
 
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
 export async function listProducts(req: Request, res: Response) {
   const page = parsePage(req.query.page);
   const limitRaw = Number(req.query.limit || 12);
@@ -46,10 +50,14 @@ export async function getProduct(req: Request, res: Response) {
 
 export async function createProduct(req: Request, res: Response) {
   const body = req.body as Record<string, unknown>;
-  const { name, description, priceCents, stock, categoryId, imageUrl, status } = body;
+  const { name, description, priceCents, stock, weightGrams, lengthCm, widthCm, heightCm, categoryId, imageUrl, status } = body;
   if (!isNonEmptyString(name) || name.trim().length < 2) return res.status(400).json({ message: 'Nome do produto inválido.' });
   if (typeof priceCents !== 'number' || !Number.isInteger(priceCents) || priceCents < 1) return res.status(400).json({ message: 'priceCents deve ser um inteiro maior que zero.' });
   if (typeof stock !== 'number' || !Number.isInteger(stock) || stock < 0) return res.status(400).json({ message: 'Estoque inválido.' });
+  if (typeof weightGrams !== 'number' || !Number.isInteger(weightGrams) || weightGrams < 1) return res.status(400).json({ message: 'Peso deve ser informado em gramas.' });
+  if (!isPositiveInteger(lengthCm) || !isPositiveInteger(widthCm) || !isPositiveInteger(heightCm)) {
+    return res.status(400).json({ message: 'Dimensões inválidas. Informe comprimento, largura e altura em centímetros.' });
+  }
   if (description !== undefined && typeof description !== 'string') return res.status(400).json({ message: 'Descrição inválida.' });
   if (imageUrl !== undefined && imageUrl !== null && typeof imageUrl !== 'string') return res.status(400).json({ message: 'URL da imagem inválida.' });
   if (categoryId !== undefined && categoryId !== null && typeof categoryId !== 'string') return res.status(400).json({ message: 'Categoria inválida.' });
@@ -59,7 +67,8 @@ export async function createProduct(req: Request, res: Response) {
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
     const product = await prisma.product.create({ data: {
       name: name.trim(), slug, description: typeof description === 'string' ? description : '',
-      priceCents, stock, categoryId: typeof categoryId === 'string' ? categoryId : null,
+      priceCents, stock, weightGrams, lengthCm, widthCm, heightCm,
+      categoryId: typeof categoryId === 'string' ? categoryId : null,
       imageUrl: typeof imageUrl === 'string' ? imageUrl : null, status: productStatus
     }, include: { category: true } });
     return res.status(201).json({ product });
@@ -86,6 +95,14 @@ export async function updateProduct(req: Request, res: Response) {
   if (body.stock !== undefined) {
     if (typeof body.stock !== 'number' || !Number.isInteger(body.stock) || body.stock < 0) return res.status(400).json({ message: 'Estoque inválido.' });
     data.stock = body.stock;
+  }
+  for (const field of ['weightGrams', 'lengthCm', 'widthCm', 'heightCm'] as const) {
+    const value = body[field];
+    if (value === undefined) continue;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+      return res.status(400).json({ message: `${field} deve ser um inteiro maior que zero.` });
+    }
+    data[field] = value;
   }
   if (body.categoryId !== undefined) data.categoryId = body.categoryId === null ? null : String(body.categoryId);
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl === null ? null : String(body.imageUrl);

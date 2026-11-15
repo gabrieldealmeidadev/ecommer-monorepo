@@ -63,6 +63,10 @@ model Product {
   description String        @default("")
   priceCents  Int
   stock       Int           @default(0)
+  weightGrams Int?
+  lengthCm    Int?
+  widthCm     Int?
+  heightCm    Int?
   imageUrl    String?
   status      ProductStatus @default(DRAFT)
   categoryId  String?

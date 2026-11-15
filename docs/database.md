@@ -2,7 +2,7 @@
 
 Entidades principais:
 - User: usuário e papel ADMIN/USER.
-- Category e Product: catálogo.
+- Category e Product: catálogo; peso do produto em gramas e dimensões do pacote em centímetros para cálculo de frete.
 - Cart e CartItem: carrinho.
 - Address: endereços do cliente.
 - Order e OrderItem: snapshot dos itens e preços no momento da compra.

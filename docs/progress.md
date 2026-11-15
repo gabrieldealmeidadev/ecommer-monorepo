@@ -14,7 +14,8 @@
 - [x] Carrinho e endereços
 - [x] Criação de pedido a partir do carrinho
 - [x] Adaptadores demonstrativos de frete e pagamento
+- [x] Integração Frenet configurável para cotação real e medidas de envio no catálogo
 - [x] Painel administrativo com CRUD de produtos, categorias e usuários e atualização de pedidos
 - [ ] Escolher e configurar gateway real
-- [ ] Implementar integração real de frete
+- [ ] Configurar credenciais da Frenet e CEP de origem para ativar cotações reais
 - [ ] Revisão de segurança e testes completos

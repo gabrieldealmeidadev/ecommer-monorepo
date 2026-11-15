@@ -19,6 +19,10 @@ type Product = {
   description: string;
   priceCents: number;
   stock: number;
+  weightGrams: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
   imageUrl: string | null;
   status: ProductStatus;
   categoryId: string | null;
@@ -37,6 +41,12 @@ type Cart = {
     imageUrl: string | null;
   }>;
   subtotalCents: number;
+};
+type ShippingQuote = {
+  provider: string;
+  service: string;
+  priceCents: number;
+  etaDays: number;
 };
 type Order = {
   id: string;
@@ -433,11 +443,16 @@ function CartPage({
 }) {
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
+  const [postalCode, setPostalCode] = useState("");
+  const [shippingQuotes, setShippingQuotes] = useState<ShippingQuote[] | null>(null);
+  const [shippingDemo, setShippingDemo] = useState(false);
+  const [quotingShipping, setQuotingShipping] = useState(false);
   async function load() {
     try {
       const data = await api<{ cart: Cart }>("/api/cart");
       setCart(data.cart);
       onCartChange(data.cart);
+      setShippingQuotes(null);
     } catch (e) {
       onError(
         e instanceof Error
@@ -457,6 +472,29 @@ function CartPage({
       await load();
     } catch (e) {
       onError(e instanceof Error ? e.message : "Erro ao remover.");
+    }
+  }
+  async function quoteShipping(event: React.FormEvent) {
+    event.preventDefault();
+    if (!cart) return;
+    setQuotingShipping(true);
+    setShippingQuotes(null);
+    setShippingDemo(false);
+    try {
+      const data = await api<{ quotes: ShippingQuote[]; demo: boolean }>("/api/shipping/quote", {
+        method: "POST",
+        body: JSON.stringify({
+          postalCode,
+          items: cart.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        }),
+      });
+      setShippingQuotes(data.quotes);
+      setShippingDemo(data.demo);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Não foi possível calcular o frete.");
+      setShippingQuotes(null);
+    } finally {
+      setQuotingShipping(false);
     }
   }
   if (loading) return <p>Carregando carrinho...</p>;
@@ -508,6 +546,46 @@ function CartPage({
         <span>Subtotal</span>
         <strong>{formatMoney(cart.subtotalCents)}</strong>
       </div>
+      <section className="form-panel">
+        <h2>Calcular frete</h2>
+        <form onSubmit={quoteShipping}>
+          <label>
+            CEP de entrega
+            <input
+              inputMode="numeric"
+              autoComplete="postal-code"
+              value={postalCode}
+              onChange={(event) => setPostalCode(event.target.value)}
+              placeholder="00000-000"
+              required
+              pattern="\d{5}-?\d{3}"
+              title="Informe um CEP válido."
+            />
+          </label>
+          <button className="button" type="submit" disabled={quotingShipping}>
+            {quotingShipping ? "Calculando..." : "Consultar opções"}
+          </button>
+        </form>
+        {shippingDemo && (
+          <p className="muted">Valores demonstrativos; não representam preço real de frete.</p>
+        )}
+        {shippingQuotes && shippingQuotes.length === 0 && (
+          <p className="muted">Nenhuma opção de frete disponível para este CEP.</p>
+        )}
+        {shippingQuotes && shippingQuotes.length > 0 && (
+          <div className="cart-list">
+            {shippingQuotes.map((quote, index) => (
+              <article className="cart-item" key={`${quote.provider}-${quote.service}-${index}`}>
+                <div>
+                  <strong>{quote.provider} — {quote.service}</strong>
+                  <p className="muted">Prazo: {quote.etaDays} dias úteis</p>
+                </div>
+                <strong>{formatMoney(quote.priceCents)}</strong>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
       <p className="muted">
         Para finalizar a compra, cadastre um endereço e crie o pedido pela API.
         O checkout visual completo será uma próxima etapa.
@@ -544,6 +622,10 @@ function AdminPage({
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("0");
+  const [weightGrams, setWeightGrams] = useState("");
+  const [lengthMeters, setLengthMeters] = useState("");
+  const [widthMeters, setWidthMeters] = useState("");
+  const [heightMeters, setHeightMeters] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [productStatus, setProductStatus] = useState<ProductStatus>("DRAFT");
@@ -618,6 +700,10 @@ function AdminPage({
     setDescription("");
     setPrice("");
     setStock("0");
+    setWeightGrams("");
+    setLengthMeters("");
+    setWidthMeters("");
+    setHeightMeters("");
     setCategoryId("");
     setImageUrl("");
     setProductStatus("DRAFT");
@@ -628,6 +714,10 @@ function AdminPage({
     setDescription(product.description);
     setPrice((product.priceCents / 100).toFixed(2));
     setStock(String(product.stock));
+    setWeightGrams(product.weightGrams === null ? "" : String(product.weightGrams));
+    setLengthMeters(product.lengthCm === null ? "" : (product.lengthCm / 100).toFixed(2));
+    setWidthMeters(product.widthCm === null ? "" : (product.widthCm / 100).toFixed(2));
+    setHeightMeters(product.heightCm === null ? "" : (product.heightCm / 100).toFixed(2));
     setCategoryId(product.categoryId || "");
     setImageUrl(product.imageUrl || "");
     setProductStatus(product.status);
@@ -640,6 +730,10 @@ function AdminPage({
       description,
       priceCents: Math.round(Number(price.replace(",", ".")) * 100),
       stock: Number(stock),
+      weightGrams: Number(weightGrams),
+      lengthCm: Math.round(Number(lengthMeters.replace(",", ".")) * 100),
+      widthCm: Math.round(Number(widthMeters.replace(",", ".")) * 100),
+      heightCm: Math.round(Number(heightMeters.replace(",", ".")) * 100),
       categoryId: categoryId || null,
       imageUrl: imageUrl || null,
       status: productStatus,
@@ -856,6 +950,56 @@ function AdminPage({
                 />
               </label>
             </div>
+            <label>
+              Peso (gramas)
+              <input
+                type="number"
+                value={weightGrams}
+                onChange={(e) => setWeightGrams(e.target.value)}
+                required
+                min="1"
+                step="1"
+                placeholder="Ex.: 250"
+              />
+            </label>
+            <div className="admin-form-row">
+              <label>
+                Comprimento (m)
+                <input
+                  type="number"
+                  value={lengthMeters}
+                  onChange={(e) => setLengthMeters(e.target.value)}
+                  required
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Ex.: 0,16"
+                />
+              </label>
+              <label>
+                Largura (m)
+                <input
+                  type="number"
+                  value={widthMeters}
+                  onChange={(e) => setWidthMeters(e.target.value)}
+                  required
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Ex.: 0,10"
+                />
+              </label>
+            </div>
+            <label>
+              Altura (m)
+              <input
+                type="number"
+                value={heightMeters}
+                onChange={(e) => setHeightMeters(e.target.value)}
+                required
+                min="0.01"
+                step="0.01"
+                placeholder="Ex.: 0,5"
+              />
+            </label>
             <label>
               Categoria
               <select
